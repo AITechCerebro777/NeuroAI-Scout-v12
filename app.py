@@ -31,7 +31,7 @@ st.markdown("""
 @st.cache_resource
 def get_client():
     try:
-        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "neuroaispeakerplatform")
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "neuroai-scout-amrc")
         return genai.Client(vertexai=True, project=project_id, location="us-central1")
     except Exception as e:
         st.error(f"Auth Error: {e}")
