@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 
 # --- 1. CONFIGURATION (ACTION REQUIRED) ---
 # Replace with the long string of letters/numbers in your Sheet's URL
-SPREADSHEET_ID = "YOUR_ACTUAL_SPREADSHEET_ID_HERE" 
+SPREADSHEET_ID = "1_JNbRsLYfp-cXHm9-Y-6-QTfpzBtNETjIBtAeqw4dAA" 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 # --- 2. GOOGLE SHEETS ARCHIVIST ENGINE ---
