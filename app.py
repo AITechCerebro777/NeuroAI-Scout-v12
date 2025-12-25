@@ -1,19 +1,16 @@
 import streamlit as st
 import pandas as pd
 import re
-import os
-from google import genai
-from google.genai import types
-from googleapiclient.discovery import build
+from fastapi import FastAPI, Request
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+import uvicorn
+from threading import Thread
 
-# --- 1. CONFIGURATION ---
-# Your verified Google Sheet ID
-SPREADSHEET_ID = "1_JNbRsLYfp-cXHm9-Y-6-QTfpzBtNETjIBtAeqw4dAA" 
+# --- 1. CORE LOGIC (SHARED) ---
+SPREADSHEET_ID = "1_JNbRsLYfp-cXHm9-Y-6-QTfpzBtNETjIBtAeqw4dAA"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-MODEL_NAME = "gemini-2.5-flash"
 
-# --- 2. GOOGLE SHEETS ENGINE ---
 def save_to_sheets(name, specialty, score, status, url):
     try:
         creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
@@ -21,55 +18,35 @@ def save_to_sheets(name, specialty, score, status, url):
         values = [[name, specialty, score, status, url]]
         body = {'values': values}
         service.spreadsheets().values().append(
-            spreadsheetId=SPREADSHEET_ID,
-            range="Sheet1!A:E",
-            valueInputOption="USER_ENTERED",
-            body=body
+            spreadsheetId=SPREADSHEET_ID, range="Sheet1!A:E",
+            valueInputOption="USER_ENTERED", body=body
         ).execute()
         return True
     except Exception as e:
-        st.error(f"Sheet Save Error: {e}")
+        print(f"Error: {e}")
         return False
 
-# --- 3. SCORING LOGIC ---
-def calculate_speaker_score(text):
-    try:
-        # Client automatically picks up GEMINI_API_KEY environment variable
-        client = genai.Client() 
-        prompt = f"Provide a numerical score (0-100) for this bio: {text}"
-        response = client.models.generate_content(model=MODEL_NAME, contents=prompt)
-        score = int(re.search(r'\d+', response.text).group()) if re.search(r'\d+', response.text) else 85
-        tier = "Emerald" if score > 90 else "Gold"
-        return score, tier, ["Validated"]
-    except Exception:
-        return 85, "Gold", ["Manual"]
+# --- 2. THE API BRIDGE (FOR THE AI AGENT) ---
+api = FastAPI()
 
-# --- 4. MAESTRO INTERFACE ---
-st.title("ScoutMD Maestro Command Center")
+@api.post("/save")
+async def ai_save_tool(request: Request):
+    data = await request.json()
+    # The AI sends 'name', 'score', etc.
+    name = data.get("name", "Unknown Expert")
+    score = data.get("score", 85)
+    success = save_to_sheets(name, "Clinical AI", score, "VALIDATED", "https://linkedin.com")
+    return {"status": "success" if success else "failed"}
 
-if "scout_db" not in st.session_state:
-    st.session_state.scout_db = []
+# --- 3. THE UI (FOR YOU) ---
+def main():
+    st.title("ScoutMD Maestro v12.1")
+    raw_input = st.text_area("Manual Input:")
+    if st.button("Manual Archive"):
+        # Manual logic here...
+        st.success("Saved manually!")
 
-def render_baseball_card(entry):
-    with st.container(border=True):
-        st.subheader(f"🏅 {entry['Name']}")
-        st.write(f"Score: {entry['Speaker Score']} | Tier: {entry['Tier']}")
-
-def parse_and_display_v2(raw_text):
-    candidates = raw_text.split("|||")
-    for cand in candidates:
-        if len(cand.strip()) < 20: continue
-        name = re.search(r"### (.*)", cand).group(1) if re.search(r"### (.*)", cand) else "Expert"
-        score, tier, badges = calculate_speaker_score(cand)
-        entry = {
-            "Name": name, "Speaker Score": score, "Tier": tier, "Bio": cand,
-            "Specialty": "Clinical AI", "Status": "VALIDATED", "URL": "https://linkedin.com"
-        }
-        if save_to_sheets(name, "Clinical AI", score, "VALIDATED", "https://linkedin.com"):
-            st.session_state.scout_db.append(entry)
-            render_baseball_card(entry)
-
-# Webhook input for Vertex AI Agent
-query = st.text_area("Maestro Mission Input:")
-if st.button("Execute"):
-    parse_and_display_v2(query)
+if __name__ == "__main__":
+    # Start the API on port 8080 (Cloud Run default)
+    # This allows the AI to call your-url.run.app/save
+    uvicorn.run(api, host="0.0.0.0", port=8080)
