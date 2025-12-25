@@ -2,70 +2,54 @@ import streamlit as st
 import pandas as pd
 import uvicorn
 import os
+import re
 from fastapi import FastAPI, Request
 from threading import Thread
-from googleapiclient.discovery import build
-from google.oauth2.service_account import Credentials
 
-# --- 1. SETTINGS ---
-SPREADSHEET_ID = "1_JNbRsLYfp-cXHm9-Y-6-QTfpzBtNETjIBtAeqw4dAA"
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+# --- 1. SESSION MEMORY ---
+# This keeps your results visible on the screen during your session
+if "scout_history" not in st.session_state:
+    st.session_state.scout_history = []
 
-# This temporary list holds data from the AI until you click "Save"
-if "scout_queue" not in st.session_state:
-    st.session_state.scout_queue = []
-
-# --- 2. DATABASE SAVER ---
-def save_to_sheets(data_list):
-    try:
-        creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
-        service = build('sheets', 'v4', credentials=creds)
-        
-        # Prepare all rows for one big save
-        values = [[d['name'], "Clinical AI", d['score'], "VALIDATED", "https://linkedin.com"] for d in data_list]
-        body = {'values': values}
-        
-        service.spreadsheets().values().append(
-            spreadsheetId=SPREADSHEET_ID, range="Sheet1!A:E",
-            valueInputOption="USER_ENTERED", body=body
-        ).execute()
-        return True
-    except Exception as e:
-        st.error(f"Error saving to Sheet: {e}")
-        return False
-
-# --- 3. THE AI BRIDGE (RECEIVING DATA) ---
+# --- 2. THE AI BRIDGE (RECEIVING DATA) ---
 api_app = FastAPI()
 
 @api_app.post("/save")
-async def ai_receive_data(request: Request):
+async def receive_from_maestro(request: Request):
     try:
         data = await request.json()
-        # Data is added to memory but NOT yet saved to the spreadsheet
-        st.session_state.scout_queue.append(data)
-        return {"status": "received", "message": "Data sent to Command Center for review."}
+        # Add the AI's findings to your session memory
+        st.session_state.scout_history.append({
+            "Name": data.get("name", "Unknown"),
+            "Score": data.get("score", 0),
+            "Tier": "Emerald" if data.get("score", 0) > 90 else "Gold",
+            "Status": "VALIDATED"
+        })
+        return {"status": "success", "message": "Expert added to review table."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# --- 4. COMMAND CENTER INTERFACE ---
+# --- 3. COMMAND CENTER INTERFACE ---
 def main():
-    st.set_page_config(page_title="ScoutMD Command Center", page_icon="🏅")
+    st.set_page_config(page_title="ScoutMD Command Center", layout="wide")
     st.title("🏅 ScoutMD Maestro Command Center")
     
-    st.subheader("Candidates Awaiting Review")
-    if st.session_state.scout_queue:
-        df = pd.DataFrame(st.session_state.scout_queue)
-        st.table(df) # Shows you what the AI found
+    st.subheader("Current Scouting Results")
+    if st.session_state.scout_history:
+        # Displays everything the AI has found in a clean table
+        df = pd.DataFrame(st.session_state.scout_history)
+        st.dataframe(df, use_container_width=True)
         
-        if st.button("🚨 SAVE ALL TO SPREADSHEET"):
-            if save_to_sheets(st.session_state.scout_queue):
-                st.success("Success! All data moved to Speaker_DB.")
-                st.session_state.scout_queue = [] # Clears the list after saving
+        st.info("💡 You can now copy these results directly into your Speaker_DB spreadsheet.")
+        
+        if st.button("Clear Results"):
+            st.session_state.scout_history = []
+            st.rerun()
     else:
-        st.info("Waiting for data from the Maestro Agent...")
+        st.info("Waiting for data from the Maestro Agent... Keep this window open.")
 
 if __name__ == "__main__":
     # Start the API Bridge for the AI
     Thread(target=lambda: uvicorn.run(api_app, host="0.0.0.0", port=8080)).start()
-    # Start the website for you
+    # Start the interface
     main()
