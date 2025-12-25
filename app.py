@@ -12,17 +12,17 @@ from google.oauth2.service_account import Credentials
 SPREADSHEET_ID = "1_JNbRsLYfp-cXHm9-Y-6-QTfpzBtNETjIBtAeqw4dAA" 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
-# 2025 Standard Model: gemini-2.5-flash is the stable reasoning-first choice
+# 2025 Stable Model: gemini-2.5-flash
 MODEL_NAME = "gemini-2.5-flash"
 
 # --- 2. GOOGLE SHEETS ARCHIVIST ENGINE ---
 def save_to_sheets(name, specialty, score, status, url):
     try:
-        # Load credentials from the 'credentials.json' file you uploaded
+        # Load credentials from the 'credentials.json' file in your repo
         creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
         service = build('sheets', 'v4', credentials=creds)
         
-        # Data mapping for columns A through E
+        # Mapping data to columns A through E
         values = [[name, specialty, score, status, url]]
         body = {'values': values}
         
@@ -41,27 +41,27 @@ def save_to_sheets(name, specialty, score, status, url):
 # --- 3. SCORING & RUBRIC LOGIC ---
 def calculate_speaker_score(text):
     """
-    Uses Gemini 2.5 Flash to evaluate the candidate against the Emerald Rubric.
+    Evaluates the candidate bio using Gemini 2.5 Flash.
     """
     try:
-        # Initialize the new Google GenAI Client
+        # Initialize GenAI Client using your GEMINI_API_KEY env variable
         client = genai.Client() 
-        prompt = f"Analyze this bio and provide a numerical score (0-100) based on clinical impact and AI innovation: {text}"
+        prompt = f"Provide a numerical score (0-100) based on clinical AI impact for: {text}"
         
         response = client.models.generate_content(
             model=MODEL_NAME,
             contents=prompt
         )
         
-        # Simple extraction for this automation
+        # Numerical score extraction
         score = int(re.search(r'\d+', response.text).group()) if re.search(r'\d+', response.text) else 85
         tier = "Emerald" if score > 90 else "Gold"
         return score, tier
     except Exception:
-        # Fallback if API key is not yet set in environment
+        # Fallback if API is unreachable
         return 88, "Gold"
 
-# --- 4. STREAMLIT INTERFACE ---
+# --- 4. MAESTRO INTERFACE ---
 st.set_page_config(page_title="ScoutMD Maestro v12.1", layout="wide")
 st.title("ScoutMD Maestro Command Center")
 
@@ -72,18 +72,16 @@ def render_baseball_card(data):
     with st.container(border=True):
         st.subheader(f"🏅 {data['Name']}")
         st.write(f"**Score:** {data['Score']} | **Tier:** {data['Tier']}")
-        st.write(f"**Status:** {data['Status']}")
 
-# Input area for the Maestro Agent to send data
+# Input area for the Maestro Agent to send candidate data strings
 raw_input = st.text_area("Maestro Data Stream Input:", height=150, placeholder="Paste candidate data here...")
 
 if st.button("Execute & Archive"):
-    # Split input by the standard '|||' delimiter
     candidates = raw_input.split("|||")
     for cand in candidates:
         if len(cand.strip()) < 10: continue
 
-        # Robust Regex Extraction (imported 're' at top)
+        # Regex Extraction for name header
         name_search = re.search(r"### (.*)", cand)
         name = name_search.group(1) if name_search else "Expert Innovator"
         
@@ -95,22 +93,3 @@ if st.button("Execute & Archive"):
             "Score": score, 
             "Tier": tier,
             "Status": "VALIDATED",
-            "URL": "https://linkedin.com"
-        }
-        
-        # Execute the save to your Google Sheet
-        if save_to_sheets(entry["Name"], entry["Specialty"], entry["Score"], entry["Status"], entry["URL"]):
-            st.success(f"Successfully archived: {name}")
-            st.session_state.scout_db.append(entry)
-            render_baseball_card(entry)
-
-# Sidebar for generating prestige invites
-with st.sidebar:
-    st.header("Communication Hub")
-    if st.session_state.scout_db:
-        df = pd.DataFrame(st.session_state.scout_db)
-        selected_expert = st.selectbox("Select candidate:", df["Name"].unique())
-        if st.button("Generate Invite"):
-            # .iloc[0] prevents the 'Series' error from previous attempts
-            expert_data = df[df["Name"] == selected_expert].iloc[0]
-            st.info(f"Drafting prestige invite for {expert_data['Name']}...")
