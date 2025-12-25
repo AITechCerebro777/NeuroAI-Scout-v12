@@ -1,16 +1,19 @@
 import streamlit as st
 import pandas as pd
 import re
-from fastapi import FastAPI, Request
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
+import os
 import uvicorn
+from fastapi import FastAPI, Request
 from threading import Thread
+from google.genai import types
+from googleapiclient.discovery import build
+from google.oauth2.service_account import Credentials
 
-# --- 1. CORE LOGIC (SHARED) ---
+# --- 1. SETTINGS (I have already done this for you) ---
 SPREADSHEET_ID = "1_JNbRsLYfp-cXHm9-Y-6-QTfpzBtNETjIBtAeqw4dAA"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
+# --- 2. THE DATABASE SAVER ---
 def save_to_sheets(name, specialty, score, status, url):
     try:
         creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
@@ -26,27 +29,32 @@ def save_to_sheets(name, specialty, score, status, url):
         print(f"Error: {e}")
         return False
 
-# --- 2. THE API BRIDGE (FOR THE AI AGENT) ---
-api = FastAPI()
+# --- 3. THE MAESTRO BRIDGE (API) ---
+# This allows the AI to "talk" to your script directly
+app = FastAPI()
 
-@api.post("/save")
+@app.post("/save")
 async def ai_save_tool(request: Request):
-    data = await request.json()
-    # The AI sends 'name', 'score', etc.
-    name = data.get("name", "Unknown Expert")
-    score = data.get("score", 85)
-    success = save_to_sheets(name, "Clinical AI", score, "VALIDATED", "https://linkedin.com")
-    return {"status": "success" if success else "failed"}
+    try:
+        data = await request.json()
+        name = data.get("name", "Unknown Expert")
+        score = data.get("score", 85)
+        # Execute the save
+        success = save_to_sheets(name, "Clinical AI", score, "VALIDATED", "https://linkedin.com")
+        return {"status": "success" if success else "failed"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
-# --- 3. THE UI (FOR YOU) ---
-def main():
-    st.title("ScoutMD Maestro v12.1")
-    raw_input = st.text_area("Manual Input:")
-    if st.button("Manual Archive"):
-        # Manual logic here...
-        st.success("Saved manually!")
+# --- 4. THE INTERFACE (STREAMLIT) ---
+def run_streamlit():
+    st.title("ScoutMD Maestro Command Center")
+    st.write("The Maestro Bridge is LIVE. AI can now archive to your Speaker_DB.")
+    if st.button("Test Sheet Connection"):
+        if save_to_sheets("Connection Test", "System", 100, "OK", "N/A"):
+            st.success("Sheet is Connected!")
 
 if __name__ == "__main__":
-    # Start the API on port 8080 (Cloud Run default)
-    # This allows the AI to call your-url.run.app/save
-    uvicorn.run(api, host="0.0.0.0", port=8080)
+    # Start the Streamlit UI in a background thread
+    Thread(target=lambda: os.system("streamlit run app.py --server.port 8501 --server.address 0.0.0.0")).start()
+    # Start the API Bridge on port 8080 (Google's Default)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
