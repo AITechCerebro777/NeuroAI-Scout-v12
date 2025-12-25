@@ -1,19 +1,17 @@
 import streamlit as st
 import pandas as pd
-import re
-import os
 import uvicorn
+import os
 from fastapi import FastAPI, Request
 from threading import Thread
-from google.genai import types
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
 
-# --- 1. SETTINGS (I have already done this for you) ---
+# --- 1. CONFIGURATION ---
 SPREADSHEET_ID = "1_JNbRsLYfp-cXHm9-Y-6-QTfpzBtNETjIBtAeqw4dAA"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
-# --- 2. THE DATABASE SAVER ---
+# --- 2. DATABASE SAVER ---
 def save_to_sheets(name, specialty, score, status, url):
     try:
         creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
@@ -29,32 +27,28 @@ def save_to_sheets(name, specialty, score, status, url):
         print(f"Error: {e}")
         return False
 
-# --- 3. THE MAESTRO BRIDGE (API) ---
-# This allows the AI to "talk" to your script directly
-app = FastAPI()
+# --- 3. THE AI HANDSHAKE (API) ---
+# This part "talks" to the Vertex AI Maestro
+api_app = FastAPI()
 
-@app.post("/save")
+@api_app.post("/save")
 async def ai_save_tool(request: Request):
     try:
         data = await request.json()
+        # The AI sends these pieces of data automatically
         name = data.get("name", "Unknown Expert")
         score = data.get("score", 85)
-        # Execute the save
-        success = save_to_sheets(name, "Clinical AI", score, "VALIDATED", "https://linkedin.com")
+        success = save_to_sheets(name, "AI HealthTech", score, "VALIDATED", "https://linkedin.com")
         return {"status": "success" if success else "failed"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 # --- 4. THE INTERFACE (STREAMLIT) ---
 def run_streamlit():
-    st.title("ScoutMD Maestro Command Center")
-    st.write("The Maestro Bridge is LIVE. AI can now archive to your Speaker_DB.")
-    if st.button("Test Sheet Connection"):
-        if save_to_sheets("Connection Test", "System", 100, "OK", "N/A"):
-            st.success("Sheet is Connected!")
+    os.system("streamlit run app.py --server.port 8501 --server.address 0.0.0.0")
 
 if __name__ == "__main__":
-    # Start the Streamlit UI in a background thread
-    Thread(target=lambda: os.system("streamlit run app.py --server.port 8501 --server.address 0.0.0.0")).start()
-    # Start the API Bridge on port 8080 (Google's Default)
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    # Start the website in the background
+    Thread(target=run_streamlit).start()
+    # Start the API Bridge for the AI on port 8080
+    uvicorn.run(api_app, host="0.0.0.0", port=8080)
